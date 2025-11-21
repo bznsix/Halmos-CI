@@ -1,0 +1,31 @@
+================================================================================
+测试时间: 2025-11-21 16:03:39
+================================================================================
+
+请求数据:
+{
+  "deploycode": "",
+  "test_case": "uniswap_callback",
+  "test_id": "1"
+}
+
+状态码: 200
+
+完整响应:
+{
+  "success": true,
+  "message": "测试执行成功",
+  "output": "Running 1 tests for test/C1_test.t.sol:Test1\nWARNING  unknown deployed bytecode: 0x                                       \n[console.log] \u001b[95mToken-address: 0x00000000000000000000000000000000000000000000000000000000aaaa0003\u001b[0m\n[console.log] \u001b[95mTarget-address: 0x00000000000000000000000000000000000000000000000000000000aaaa0002\u001b[0m\n\u001b[32m[PASS]\u001b[0m test_uniswapV3SwapCallback_k1() (paths: 1, time: 0.01s, bounds: [])\nSymbolic test result: 1 passed; 0 failed; time: 0.07s",
+  "error": null
+}
+
+================================================================================
+输出内容:
+================================================================================
+Running 1 tests for test/C1_test.t.sol:Test1
+WARNING  unknown deployed bytecode: 0x                                       
+[console.log] [95mToken-address: 0x00000000000000000000000000000000000000000000000000000000aaaa0003[0m
+[console.log] [95mTarget-address: 0x00000000000000000000000000000000000000000000000000000000aaaa0002[0m
+[32m[PASS][0m test_uniswapV3SwapCallback_k1() (paths: 1, time: 0.01s, bounds: [])
+Symbolic test result: 1 passed; 0 failed; time: 0.07s
+
