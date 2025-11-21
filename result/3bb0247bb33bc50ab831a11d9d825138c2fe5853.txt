@@ -1,0 +1,28 @@
+================================================================================
+合约地址: 0x3bb0247bb33bc50ab831a11d9d825138c2fe5853
+测试时间: 2025-11-21 20:03:00
+================================================================================
+
+完整响应:
+{
+  "success": false,
+  "message": "测试执行失败 (退出码: 1)",
+  "output": "[console.log] Token-address: 0x00000000000000000000000000000000000000000000000000000000aaaa0003\n[console.log] Target-address: 0x00000000000000000000000000000000000000000000000000000000aaaa0002\n[ERROR] test_uniswapV3SwapCallback_k1() (paths: 7, time: 0.07s, bounds: [])\nWARNING  Encountered NotConcreteError: symbolic CALLDATALOAD offset:               \n         +(0x0000000000000000000000000000000000000000000000000000000000000084,     \n         Extract(0x9ff, 0x900, halmos_callbackData_k1_bytes_7838b20_03))           \n         (see https://github.com/a16z/halmos/wiki/warnings#internal-error)         \nWARNING  Encountered NotConcreteError: symbolic CALLDATALOAD offset:               \n         +(0x0000000000000000000000000000000000000000000000000000000000000084,     \n         Extract(0x9ff, 0x900, halmos_callbackData_k1_bytes_7838b20_03))           \n         (see https://github.com/a16z/halmos/wiki/warnings#internal-error)         \nSymbolic test result: 0 passed; 1 failed; time: 0.15s",
+  "error": "[console.log] Token-address: 0x00000000000000000000000000000000000000000000000000000000aaaa0003\n[console.log] Target-address: 0x00000000000000000000000000000000000000000000000000000000aaaa0002\n[ERROR] test_uniswapV3SwapCallback_k1() (paths: 7, time: 0.07s, bounds: [])\nWARNING  Encountered NotConcreteError: symbolic CALLDATALOAD offset:               \n         +(0x0000000000000000000000000000000000000000000000000000000000000084,     \n         Extract(0x9ff, 0x900, halmos_callbackData_k1_bytes_7838b20_03))           \n         (see https://github.com/a16z/halmos/wiki/warnings#internal-error)         \nWARNING  Encountered NotConcreteError: symbolic CALLDATALOAD offset:               \n         +(0x0000000000000000000000000000000000000000000000000000000000000084,     \n         Extract(0x9ff, 0x900, halmos_callbackData_k1_bytes_7838b20_03))           \n         (see https://github.com/a16z/halmos/wiki/warnings#internal-error)         \nSymbolic test result: 0 passed; 1 failed; time: 0.15s"
+}
+
+================================================================================
+输出内容:
+================================================================================
+[console.log] Token-address: 0x00000000000000000000000000000000000000000000000000000000aaaa0003
+[console.log] Target-address: 0x00000000000000000000000000000000000000000000000000000000aaaa0002
+[ERROR] test_uniswapV3SwapCallback_k1() (paths: 7, time: 0.07s, bounds: [])
+WARNING  Encountered NotConcreteError: symbolic CALLDATALOAD offset:               
+         +(0x0000000000000000000000000000000000000000000000000000000000000084,     
+         Extract(0x9ff, 0x900, halmos_callbackData_k1_bytes_7838b20_03))           
+         (see https://github.com/a16z/halmos/wiki/warnings#internal-error)         
+WARNING  Encountered NotConcreteError: symbolic CALLDATALOAD offset:               
+         +(0x0000000000000000000000000000000000000000000000000000000000000084,     
+         Extract(0x9ff, 0x900, halmos_callbackData_k1_bytes_7838b20_03))           
+         (see https://github.com/a16z/halmos/wiki/warnings#internal-error)         
+Symbolic test result: 0 passed; 1 failed; time: 0.15s

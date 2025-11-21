@@ -8,6 +8,7 @@ import argparse
 import csv
 import json
 import os
+import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -23,6 +24,89 @@ ETHERSCAN_API_BASE = "https://api.etherscan.io/v2/api"
 RESULT_DIR = Path("result")
 RESULT_DIR.mkdir(exist_ok=True)
 
+# 数据库文件路径
+DB_FILE = Path("creation_codes.db")
+
+
+def init_database():
+    """初始化SQLite数据库，创建表结构"""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    # 创建表：存储合约地址、链ID、creation code和时间戳
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS creation_codes (
+            address TEXT NOT NULL,
+            chain_id INTEGER NOT NULL,
+            creation_code TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (address, chain_id)
+        )
+    """)
+    
+    # 创建索引以提高查询速度
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_address_chain 
+        ON creation_codes(address, chain_id)
+    """)
+    
+    conn.commit()
+    conn.close()
+
+
+def get_creation_code_from_db(contract_address: str, chain_id: int) -> Optional[str]:
+    """
+    从本地数据库查询creation code
+    
+    Args:
+        contract_address: 合约地址
+        chain_id: 链ID
+    
+    Returns:
+        creation bytecode（如果数据库中没有则为None）
+    """
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    address_lower = contract_address.lower()
+    cursor.execute(
+        "SELECT creation_code FROM creation_codes WHERE address = ? AND chain_id = ?",
+        (address_lower, chain_id)
+    )
+    
+    result = cursor.fetchone()
+    conn.close()
+    
+    if result:
+        return result[0]
+    return None
+
+
+def save_creation_code_to_db(contract_address: str, chain_id: int, creation_code: str):
+    """
+    将creation code保存到本地数据库
+    
+    Args:
+        contract_address: 合约地址
+        chain_id: 链ID
+        creation_code: creation bytecode（已去掉0x前缀）
+    """
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    address_lower = contract_address.lower()
+    # 使用INSERT OR REPLACE来更新已存在的记录
+    cursor.execute(
+        """
+        INSERT OR REPLACE INTO creation_codes (address, chain_id, creation_code, created_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+        """,
+        (address_lower, chain_id, creation_code)
+    )
+    
+    conn.commit()
+    conn.close()
+
 
 def get_etherscan_api_key() -> str:
     """从环境变量获取Etherscan API Key"""
@@ -36,7 +120,7 @@ def get_etherscan_api_key() -> str:
 
 def get_single_contract_creation_code(contract_address: str, chain_id: int, api_key: str) -> Optional[str]:
     """
-    从Etherscan API获取单个合约的creation code
+    获取单个合约的creation code（先查数据库，没有则调用API）
     
     Args:
         contract_address: 合约地址
@@ -46,14 +130,27 @@ def get_single_contract_creation_code(contract_address: str, chain_id: int, api_
     Returns:
         creation bytecode（如果获取失败则为None），已去掉0x前缀
     """
-    # 调用批量获取函数，但只传入一个地址
+    # 1. 先查询本地数据库
+    creation_code = get_creation_code_from_db(contract_address, chain_id)
+    if creation_code:
+        print(f"  ✓ 从本地数据库获取成功")
+        return creation_code
+    
+    # 2. 数据库中没有，调用API获取（带重试机制）
+    print(f"  → 本地数据库未找到，从Etherscan API获取...")
     result_dict = get_contract_creation_code([contract_address], chain_id, api_key)
-    return result_dict.get(contract_address.lower())
+    creation_code = result_dict.get(contract_address.lower())
+    
+    # 3. 如果API获取成功，保存到数据库（get_contract_creation_code内部已保存，这里只显示提示）
+    if creation_code:
+        print(f"  ✓ 已保存到本地数据库")
+    
+    return creation_code
 
 
 def get_contract_creation_code(contract_addresses: list[str], chain_id: int, api_key: str) -> dict[str, Optional[str]]:
     """
-    从Etherscan API获取合约的creation code
+    从Etherscan API获取合约的creation code（带重试机制）
     
     Args:
         contract_addresses: 合约地址列表（最多5个）
@@ -78,58 +175,125 @@ def get_contract_creation_code(contract_addresses: list[str], chain_id: int, api
         print(f"  链ID: {chain_id}")
         print(f"  合约数量: {len(contract_addresses)}")
     
-    try:
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        
-        result_dict = {}
-        
-        if data.get("status") == "1" and data.get("message") == "OK":
-            results = data.get("result", [])
-            # 创建地址到creation code的映射
-            for item in results:
-                address = item.get("contractAddress", "").lower()
-                creation_code = item.get("creationBytecode", "")
-                if address and creation_code:
-                    # 去掉0x前缀
-                    if creation_code.startswith("0x") or creation_code.startswith("0X"):
-                        creation_code = creation_code[2:]
-                    result_dict[address] = creation_code
-                    # 只在批量获取时显示详细信息
-                    if len(contract_addresses) > 1:
-                        print(f"  ✓ 获取成功: {address[:10]}...{address[-8:]}")
-                else:
-                    if len(contract_addresses) > 1:
-                        print(f"  ✗ 数据不完整: {item}")
+    # 重试机制：最多重试5次
+    max_retries = 10
+    last_error = None
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+            data = response.json()
             
-            # 检查哪些地址没有获取到
-            for addr in contract_addresses:
-                addr_lower = addr.lower()
-                if addr_lower not in result_dict:
-                    result_dict[addr_lower] = None
+            result_dict = {}
+            
+            # 检查API返回状态
+            if data.get("status") == "1" and data.get("message") == "OK":
+                results = data.get("result", [])
+                # 创建地址到creation code的映射
+                for item in results:
+                    address = item.get("contractAddress", "").lower()
+                    creation_code = item.get("creationBytecode", "")
+                    if address and creation_code:
+                        # 去掉0x前缀
+                        if creation_code.startswith("0x") or creation_code.startswith("0X"):
+                            creation_code = creation_code[2:]
+                        result_dict[address] = creation_code
+                        # 保存到数据库
+                        save_creation_code_to_db(address, chain_id, creation_code)
+                        # 只在批量获取时显示详细信息
+                        if len(contract_addresses) > 1:
+                            print(f"  ✓ 获取成功: {address[:10]}...{address[-8:]}")
+                    else:
+                        if len(contract_addresses) > 1:
+                            print(f"  ✗ 数据不完整: {item}")
+                
+                # 检查哪些地址没有获取到
+                for addr in contract_addresses:
+                    addr_lower = addr.lower()
+                    if addr_lower not in result_dict:
+                        result_dict[addr_lower] = None
+                        if len(contract_addresses) > 1:
+                            print(f"  ✗ 未找到: {addr}")
+                
+                # 成功获取，返回结果
+                return result_dict
+            else:
+                # API返回错误状态，需要重试
+                error_msg = f"Etherscan API返回错误: {data.get('message', 'Unknown error')}"
+                last_error = error_msg
+                if len(contract_addresses) > 1:
+                    print(f"  ✗ 第{attempt}次尝试失败: {error_msg}")
+                else:
+                    print(f"  ✗ 第{attempt}次尝试失败: {error_msg}")
+                
+                # 如果不是最后一次尝试，等待后重试
+                if attempt < max_retries:
+                    wait_time = 2  # 固定延迟2秒
+                    print(f"  → {wait_time}秒后重试...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    # 最后一次尝试也失败，返回空结果
                     if len(contract_addresses) > 1:
-                        print(f"  ✗ 未找到: {addr}")
-        else:
-            error_msg = f"Etherscan API返回错误: {data.get('message', 'Unknown error')}"
+                        print(f"  ✗ 重试{max_retries}次后仍然失败")
+                    return {addr.lower(): None for addr in contract_addresses}
+        
+        except requests.exceptions.Timeout as e:
+            last_error = f"请求超时: {str(e)}"
             if len(contract_addresses) > 1:
-                print(f"  ✗ {error_msg}")
-            # 所有地址都标记为None
-            for addr in contract_addresses:
-                result_dict[addr.lower()] = None
+                print(f"  ✗ 第{attempt}次尝试失败: {last_error}")
+            else:
+                print(f"  ✗ 第{attempt}次尝试失败: {last_error}")
+            
+            if attempt < max_retries:
+                wait_time = 2  # 固定延迟2秒
+                print(f"  → {wait_time}秒后重试...")
+                time.sleep(wait_time)
+                continue
+            else:
+                if len(contract_addresses) > 1:
+                    print(f"  ✗ 重试{max_retries}次后仍然失败")
+                return {addr.lower(): None for addr in contract_addresses}
         
-        return result_dict
+        except requests.exceptions.RequestException as e:
+            last_error = f"请求Etherscan API失败: {str(e)}"
+            if len(contract_addresses) > 1:
+                print(f"  ✗ 第{attempt}次尝试失败: {last_error}")
+            else:
+                print(f"  ✗ 第{attempt}次尝试失败: {last_error}")
+            
+            if attempt < max_retries:
+                wait_time = 2  # 固定延迟2秒
+                print(f"  → {wait_time}秒后重试...")
+                time.sleep(wait_time)
+                continue
+            else:
+                if len(contract_addresses) > 1:
+                    print(f"  ✗ 重试{max_retries}次后仍然失败")
+                return {addr.lower(): None for addr in contract_addresses}
         
-    except requests.exceptions.RequestException as e:
-        error_msg = f"请求Etherscan API失败: {str(e)}"
-        if len(contract_addresses) > 1:
-            print(f"  ✗ {error_msg}")
-        return {addr.lower(): None for addr in contract_addresses}
-    except Exception as e:
-        error_msg = f"处理响应时出错: {str(e)}"
-        if len(contract_addresses) > 1:
-            print(f"  ✗ {error_msg}")
-        return {addr.lower(): None for addr in contract_addresses}
+        except Exception as e:
+            last_error = f"处理响应时出错: {str(e)}"
+            if len(contract_addresses) > 1:
+                print(f"  ✗ 第{attempt}次尝试失败: {last_error}")
+            else:
+                print(f"  ✗ 第{attempt}次尝试失败: {last_error}")
+            
+            if attempt < max_retries:
+                wait_time = 2  # 固定延迟2秒
+                print(f"  → {wait_time}秒后重试...")
+                time.sleep(wait_time)
+                continue
+            else:
+                if len(contract_addresses) > 1:
+                    print(f"  ✗ 重试{max_retries}次后仍然失败")
+                return {addr.lower(): None for addr in contract_addresses}
+    
+    # 理论上不会到达这里，但为了安全起见
+    if len(contract_addresses) > 1:
+        print(f"  ✗ 重试{max_retries}次后仍然失败: {last_error}")
+    return {addr.lower(): None for addr in contract_addresses}
 
 
 def read_csv_addresses(csv_file: str) -> list[str]:
@@ -310,6 +474,12 @@ def batch_test(chain_id: int, csv_file: str, test_case: str = "uniswap_callback"
         batch_size = 5
     if api_key is None:
         api_key = get_etherscan_api_key()
+    
+    # 初始化数据库
+    print("初始化数据库...")
+    init_database()
+    print(f"数据库文件: {DB_FILE.absolute()}")
+    print()
     
     print("=" * 80)
     print("批量测试开始")
