@@ -82,3 +82,110 @@ curl -X POST http://localhost:8005/test \
 - 测试完成后会自动清理临时文件
 - 合约名格式：`C{test_id}`（例如 C1, C2, C100）
 - 默认函数名：`test_uniswapV3SwapCallback_k1`，可通过参数自定义
+
+## 批量测试
+
+### 批量测试脚本
+
+`batch_test.py` 脚本可以从CSV文件读取合约地址，自动获取合约的creation code，并批量执行测试。
+
+#### 功能特点
+
+1. **从CSV文件读取地址**: 自动读取CSV文件中的`address`列
+2. **获取合约creation code**: 通过Etherscan API批量获取合约的creation bytecode
+3. **批量执行测试**: 自动调用本地API服务器执行测试
+4. **格式化输出结果**: 将测试结果保存到`result/`文件夹，以合约地址命名
+
+#### 使用方法
+
+1. **准备CSV文件**
+
+   CSV文件必须包含`address`列（不区分大小写），示例：
+
+   ```csv
+   address
+   0xB83c27805aAcA5C7082eB45C868d955Cf04C337F
+   0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45
+   ```
+
+2. **设置Etherscan API Key**
+
+   ```bash
+   export ETHERSCAN_API_KEY=YourApiKeyToken
+   ```
+
+   或直接在命令行中指定：
+
+   ```bash
+   python3 batch_test.py --chain-id 8453 --csv contracts.csv --api-key G9B33Z5WD7UJQT45VK16YCTZDRDFAEYYB6
+   ```
+
+3. **运行批量测试**
+
+   ```bash
+   # 基本用法
+   python3 batch_test.py --chain-id 1 --csv contracts.csv
+
+   # 指定测试用例
+   python3 batch_test.py --chain-id 1 --csv contracts.csv --test-case uniswap_callback
+
+   # 指定批量大小（如果Etherscan API有限制）
+   python3 batch_test.py --chain-id 1 --csv contracts.csv --batch-size 5
+   ```
+
+#### 参数说明
+
+- `--chain-id` (必需): 链ID，例如：
+  - `1` = 以太坊主网
+  - `56` = BSC
+  - `137` = Polygon
+  - `42161` = Arbitrum
+- `--csv` (必需): CSV文件路径，必须包含`address`列
+- `--test-case` (可选): 测试用例名称，默认为`uniswap_callback`
+- `--api-key` (可选): Etherscan API Key，如果不提供则从环境变量`ETHERSCAN_API_KEY`读取
+- `--batch-size` (可选): 批量获取creation code时的批次大小，默认为5（Etherscan API限制：最多5个地址）
+
+#### 输出格式
+
+测试结果保存在`result/`文件夹下，文件名格式为`{合约地址}.txt`（去除0x前缀，使用小写）。
+
+每个结果文件包含：
+
+1. **完整响应**: JSON格式的完整API响应
+2. **输出内容**: 格式化后的测试输出（从`[console.log]`到`Symbolic test result`）
+
+示例输出文件内容：
+
+```
+================================================================================
+合约地址: 0xB83c27805aAcA5C7082eB45C868d955Cf04C337F
+测试时间: 2024-01-01 12:00:00
+================================================================================
+
+完整响应:
+{
+  "success": false,
+  "message": "测试执行失败 (退出码: 1)",
+  "output": "...",
+  "error": "..."
+}
+
+================================================================================
+输出内容:
+================================================================================
+[console.log] Token-address: 0x00000000000000000000000000000000000000000000000000000000aaaa0003
+[console.log] Target-address: 0x00000000000000000000000000000000000000000000000000000000aaaa0002
+Counterexample: 
+    halmos_amount0Delta_k1_int256_658851a_01 = 0x4000000000000000
+    ...
+[FAIL] test_uniswapV3SwapCallback_k1() (paths: 13, time: 0.11s, bounds: [])
+Symbolic test result: 0 passed; 1 failed; time: 0.21s
+```
+
+#### 注意事项
+
+- 确保API服务器正在运行（`python3 api_server.py`）
+- **Etherscan API限制**：`contractaddresses` 参数最多只能接受5个地址，脚本默认批次大小为5
+- Etherscan API可能有速率限制，脚本会自动在批次之间添加延迟
+- 如果某个合约的creation code获取失败，该合约会被跳过，但仍会保存失败记录
+- 测试结果文件会覆盖同名文件，请根据需要备份
