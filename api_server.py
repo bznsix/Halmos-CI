@@ -109,53 +109,50 @@ def create_test_file_with_id(test_case: str, test_id: str, deploycode: str) -> t
 
 
 def format_halmos_output(output: str) -> str:
-    """格式化 halmos 输出，只保留测试执行相关的输出（过滤掉编译和 lint 信息）"""
+    """格式化 halmos 输出，只保留从 '[console.log]' 开头到 'Symbolic test result' 结尾的内容，并删除 ANSI 颜色代码"""
+    import re
+    
     lines = output.split('\n')
     
-    # 查找测试执行相关的关键标记（按优先级顺序）
-    # 这些标记表示测试实际开始执行，之前的都是编译信息
+    # 查找 "[console.log]" 开头的行
     start_idx = None
     for i, line in enumerate(lines):
-        # 查找测试执行相关的关键行
-        if ('WARNING' in line or
-            '[console.log]' in line or
-            '[console.error]' in line or
-            '[PASS]' in line or
-            '[FAIL]' in line or
-            ('Running' in line and 'tests for' in line) or
-            'Symbolic test result' in line):
+        if '[console.log]' in line:
             start_idx = i
             break
     
     if start_idx is None:
-        # 都没找到，返回原始输出
-        return output
+        # 没找到开始位置，返回空字符串
+        return ""
     
-    # 找到结束位置：在 "Symbolic test result" 之后，如果遇到 lint 相关的标记就截断
-    end_idx = len(lines)
-    found_symbolic_result = False
-    
+    # 查找 "Symbolic test result" 结尾的行
+    end_idx = None
     for i in range(start_idx, len(lines)):
-        line = lines[i]
-        
-        # 标记找到了 "Symbolic test result"
-        if 'Symbolic test result' in line:
-            found_symbolic_result = True
+        if 'Symbolic test result' in lines[i]:
             end_idx = i + 1  # 包含这一行
-            continue
-        
-        # 如果已经找到了 "Symbolic test result"，检查下一行是否是 lint 信息
-        if found_symbolic_result:
-            line_stripped = line.strip()
-            # 如果遇到 lint 相关的标记，截断到这里（不包含这一行）
-            if (line_stripped.startswith('Warning:') or
-                line_stripped.startswith('note[') or
-                line_stripped.startswith('warning[')):
-                end_idx = i
-                break
+            break
     
-    # 返回从开始到结束的所有行
-    return '\n'.join(lines[start_idx:end_idx])
+    if end_idx is None:
+        # 没找到结束位置，返回从开始到结尾
+        result_lines = lines[start_idx:]
+    else:
+        # 返回从开始到结束的所有行
+        result_lines = lines[start_idx:end_idx]
+    
+    # 合并行并删除 ANSI 颜色代码
+    result = '\n'.join(result_lines)
+    
+    # 删除 ANSI 转义序列（颜色代码）
+    # 匹配 \u001b[...m 或 \x1b[...m 格式的 ANSI 转义序列
+    ansi_escape = re.compile(r'\x1b\[[0-9;]*m|\u001b\[[0-9;]*m')
+    result = ansi_escape.sub('', result)
+    
+    # 规范化换行符：确保使用 \n，移除多余的换行
+    result = result.replace('\r\n', '\n').replace('\r', '\n')
+    # 移除末尾的多个换行符
+    result = result.rstrip('\n')
+    
+    return result
 
 
 def run_halmos(test_file: Path, contract_name: str, function_name: str = "test_uniswapV3SwapCallback_k1") -> tuple[bool, str, Optional[str]]:
