@@ -200,7 +200,7 @@ def run_halmos(test_file: Path, contract_name: str, function_name: str = "test_u
         cmd = [
             "halmos",
             "--contract", contract_name,
-            "--function", function_name
+            # "--function", function_name
         ]
         
         # 打印执行的命令

@@ -181,6 +181,7 @@ def get_contract_creation_code(contract_addresses: list[str], chain_id: int, api
     
     for attempt in range(1, max_retries + 1):
         try:
+            print(f"正在从Etherscan获取合约creation code... {url}")
             response = requests.get(url, timeout=30)
             response.raise_for_status()
             data = response.json()
