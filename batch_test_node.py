@@ -13,7 +13,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Optional
-import requestsclear
+import requests
 from datetime import datetime
 
 # 导入RPC获取creation code的方法
